@@ -11,35 +11,29 @@ public class Voter {
     private static PublicKey vaPublicKey;
     private static PrivateKey voterPrivateKey;
     
-    static {
-    	try {
-    		KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
-    		keyGen.initialize(2048);
-    		voterKeyPair = keyGen.generateKeyPair();
-    		voterPrivateKey = voterKeyPair.getPrivate();
-    		
-    		raPublicKey = keyGen.generateKeyPair().getPublic();
-    		vaPublicKey = keyGen.generateKeyPair().getPublic();
-    	} catch (Exception e) {
-    		e.printStackTrace();
-    	}
-    }
-    
-    public static void sendVote(String voterID) throws Exception {
+    public static void sendVote(
+    		String voterID,
+    		KeyPair voterKeyPair,
+            PublicKey raPublicKey,
+            PublicKey vaPublicKey
+    ) throws Exception {
     	Socket raSocket = new Socket("localhost", 5001);
-    	OutputStream raOut = raSocket.getOutputStream();
-    	InputStream raIn = raSocket.getInputStream();
+    	ObjectOutputStream raOut = new ObjectOutputStream(raSocket.getOutputStream());
+    	ObjectInputStream raIn = new ObjectInputStream(raSocket.getInputStream());
     	
     	byte[] encryptedID = CryptoUtils.encrypt(voterID, raPublicKey);
-    	raOut.write(encryptedID);
+    	raOut.writeObject(encryptedID);
+    	raOut.writeObject(voterKeyPair.getPublic());
     	raOut.flush();
     	
-    	byte[] tokenBytes = raIn.readNBytes(256);
+    	PrivateKey voterPrivateKey = voterKeyPair.getPrivate();
+    	
+    	byte[] tokenBytes = (byte[]) raIn.readObject();
     	String token = CryptoUtils.decrypt(tokenBytes, voterPrivateKey);
     	System.out.println(voterID + " received token: " + token);
     	raSocket.close();
     	
-    	String vote = "Yes";
+    	String vote = Math.random() > 0.5 ? "Yes" : "No";
     	byte[] encryptedVote = CryptoUtils.encrypt(vote, vaPublicKey);
     	
     	String hashedVote = CryptoUtils.hash(vote);

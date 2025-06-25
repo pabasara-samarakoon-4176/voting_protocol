@@ -3,28 +3,19 @@ package crypto;
 import java.io.*;
 import java.net.*;
 import java.security.*;
+import java.util.Base64;
 
 public class RA {
-
-	private static KeyPair raKeyPair;
-	
-	static {
-		try {
-			KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
-			keyGen.initialize(2048);
-			raKeyPair = keyGen.generateKeyPair();
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-	}
 	
 	public static void main(String[] args) throws IOException {
 		ServerSocket serverSocket = new ServerSocket(5001);
 		System.out.println("RA started. Waiting for voters...");
 		
+		PrivateKey raPrivateKey = KeyManager.getPrivateKey("RA");
+		
 		while (true) {
 			Socket clientSocket = serverSocket.accept();
-			new Thread(new RAHandler(clientSocket, raKeyPair.getPrivate())).start();
+			new Thread(new RAHandler(clientSocket, raPrivateKey)).start();
 		}
 	}
 
@@ -46,6 +37,7 @@ class RAHandler implements Runnable {
         ) {
             byte[] encryptedID = (byte[]) in.readObject();
             PublicKey voterPublicKey = (PublicKey) in.readObject();
+
 
             String voterID = CryptoUtils.decrypt(encryptedID, raPrivateKey);
             System.out.println("RA received ID: " + voterID);

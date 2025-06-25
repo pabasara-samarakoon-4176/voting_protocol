@@ -39,6 +39,18 @@ public class CryptoUtils {
         return signature.verify(signatureBytes);
     }
     
+    public static String decryptWithPublicKey(byte[] encryptedData, PublicKey publicKey) {
+    	try {
+    		Cipher cipher = Cipher.getInstance("RSA");
+    		cipher.init(Cipher.DECRYPT_MODE, publicKey);
+    		byte[] decrypted = cipher.doFinal(encryptedData);
+    		return new String(decrypted);
+    	} catch (Exception e) {
+    		e.printStackTrace();
+    		return null;
+    	}
+    }
+    
     public static byte[] getSignedMessage(byte[] signature, PublicKey publicKey) {
         // This method is symbolic; to extract original hash from signature you would need the original message.
         // Here, assume the signature is used for verifying a known string (i.e., token sent separately).
@@ -48,6 +60,12 @@ public class CryptoUtils {
     public static byte[] encryptBytes(byte[] data, PublicKey key) throws Exception {
         Cipher cipher = Cipher.getInstance("RSA");
         cipher.init(Cipher.ENCRYPT_MODE, key);
+        return cipher.doFinal(data);
+    }
+    
+    public static byte[] decryptBytes(byte[] data, PrivateKey key) throws Exception {
+        Cipher cipher = Cipher.getInstance("RSA");
+        cipher.init(Cipher.DECRYPT_MODE, key);
         return cipher.doFinal(data);
     }
     

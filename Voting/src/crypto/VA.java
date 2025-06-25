@@ -8,26 +8,18 @@ import java.util.HashSet;
 import java.util.Set;
 
 public class VA {
-    private static KeyPair vaKeyPair;
     private static final Set<String> tokenDump = new HashSet<>();
-
-    static {
-        try {
-            KeyPairGenerator keyGen = KeyPairGenerator.getInstance("RSA");
-            keyGen.initialize(2048);
-            vaKeyPair = keyGen.generateKeyPair();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
 
     public static void main(String[] args) throws Exception {
         ServerSocket serverSocket = new ServerSocket(5002);
         System.out.println("VA started. Waiting for voters...");
+        
+        PrivateKey vaPrivateKey = KeyManager.getPrivateKey("VA");
+        PublicKey vaPublicKey = KeyManager.getPublicKey("VA");
 
         while (true) {
             Socket socket = serverSocket.accept();
-            new Thread(new VAHandler(socket, vaKeyPair)).start();
+            new Thread(new VAHandler(socket, vaPrivateKey, vaPublicKey)).start();
         }
     }
 
@@ -39,11 +31,13 @@ public class VA {
 
 class VAHandler implements Runnable {
 	private final Socket socket;
-	private final KeyPair vaKeyPair;
+	private final PrivateKey vaPrivateKey;
+	private final PublicKey vaPublicKey;
 	
-	public VAHandler(Socket socket, KeyPair vaKeyPair) {
+	public VAHandler(Socket socket, PrivateKey vaPrivateKey, PublicKey vaPublicKey) {
 		this.socket = socket;
-		this.vaKeyPair = vaKeyPair;
+		this.vaPrivateKey = vaPrivateKey;
+		this.vaPublicKey = vaPublicKey;
 	}
 	
 	public void run() {
@@ -55,8 +49,8 @@ class VAHandler implements Runnable {
             byte[] signedToken = (byte[]) in.readObject();
             PublicKey voterPublicKey = (PublicKey) in.readObject();
             
-            String vote = CryptoUtils.decrypt(encryptedVote, vaKeyPair.getPrivate());
-            System.out.println("Decrypted vote: " + vote);
+            String vote = CryptoUtils.decrypt(encryptedVote, vaPrivateKey);
+            // System.out.println("Decrypted vote: " + vote);
             
             String hashVote = CryptoUtils.hash(vote);
             boolean isVoteValid = CryptoUtils.verify(hashVote, signedHashVote, voterPublicKey);
@@ -66,7 +60,7 @@ class VAHandler implements Runnable {
                 return;
             }
             
-            String token = new String(CryptoUtils.getSignedMessage(signedToken, voterPublicKey)); // or reconstruct from trust
+            String token = new String(CryptoUtils.decryptWithPublicKey(signedToken, voterPublicKey)); 
             if (token == null || token.isBlank()) {
                 System.out.println("Invalid token or signature. Vote rejected.");
                 socket.close();
@@ -81,12 +75,11 @@ class VAHandler implements Runnable {
             
             System.out.println("Vote accepted. Proceeding to BB and VS.");
             
-            byte[] encryptedHash = CryptoUtils.encrypt(hashVote, getBBPublicKey()); // Replace with BB's actual key
-            sendToBB(encryptedHash);
+            sendToBB(hashVote);
+            System.out.println("Sent to BB.");
             
-            byte[] signedHash = CryptoUtils.sign(hashVote, vaKeyPair.getPrivate());
-            byte[] encryptedSignedHash = CryptoUtils.encryptBytes(signedHash, getVSPublicKey()); // Replace with VS's key
-            sendToVS(encryptedSignedHash);
+            byte[] signedHash = CryptoUtils.sign(hashVote, vaPrivateKey);
+            sendToVS(signedHash);
             
             VA.getTokenDump().add(token);
             socket.close();
@@ -95,33 +88,31 @@ class VAHandler implements Runnable {
 		}
 	}
 	
-	private void sendToBB(byte[] encryptedHash) throws IOException {
-        Socket bb = new Socket("localhost", 5003); 
-        ObjectOutputStream out = new ObjectOutputStream(bb.getOutputStream());
-        out.writeObject(encryptedHash);
-        out.flush();
-        bb.close();
+	private void sendToBB(String hashVote) throws Exception {
+		PublicKey bbPublicKey = KeyManager.getPublicKey("BB");
+		if (bbPublicKey == null) {
+			throw new RuntimeException("BB public key not found in KeyManager.");
+		}
+		
+		byte[] encryptedHash = CryptoUtils.encrypt(hashVote, bbPublicKey);
+		
+		try (Socket bb = new Socket("localhost", 5003);
+				ObjectOutputStream out = new ObjectOutputStream(bb.getOutputStream())) {
+			out.writeObject(encryptedHash);
+			out.flush();
+		}
     }
 	
-	private void sendToVS(byte[] encryptedSignedHash) throws IOException {
-        Socket vs = new Socket("localhost", 5004); 
-        ObjectOutputStream out = new ObjectOutputStream(vs.getOutputStream());
-        out.writeObject(encryptedSignedHash);
-        out.flush();
-        vs.close();
-    }
+	private void sendToVS(byte[] signedHash) throws IOException {
+		
+	    try (Socket vs = new Socket("localhost", 5004);
+	         ObjectOutputStream out = new ObjectOutputStream(vs.getOutputStream())) {
+	        out.writeObject(signedHash);
+	        out.flush();
+	        System.out.println("Sent to VS.");
+	    }
+	}
 	
-	private PublicKey getBBPublicKey() throws Exception {
-        KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
-        gen.initialize(2048);
-        return gen.generateKeyPair().getPublic();
-    }
-	
-	private PublicKey getVSPublicKey() throws Exception {
-        KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
-        gen.initialize(2048);
-        return gen.generateKeyPair().getPublic();
-    }
 }
 
 
